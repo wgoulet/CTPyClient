@@ -2,6 +2,8 @@ import os
 import base64
 from requests import Session, Request
 from OpenSSL import crypto
+from pyasn1.codec.der.decoder import decode
+from pyasn1_modules import rfc2459
 
 
 
@@ -29,11 +31,22 @@ for i in roots:
        try:
            certobj = crypto.load_certificate(crypto.FILETYPE_ASN1,base64.b64decode(k))
            subject = certobj.get_subject()
-           print 'CN={},OU={},O={},L={},S={},C={}'.format(subject.commonName,
-                                                      subject.organizationalUnitName,
-                                                      subject.organizationName,
-                                                      subject.localityName,
-                                                      subject.stateOrProvinceName,
-                                                      subject.countryName)
-       except:
-           print subject.get_components()
+           cert,rest = decode(base64.b64decode(k),asn1Spec=rfc2459.Certificate())
+           cert = cert['tbsCertificate']
+           subj = cert['subject']
+           rdnseq = subj[0]
+           subjstr = ''
+           for r in rdnseq:
+               oid,value = r[0]
+               subjstr = subjstr + ':' + str(value)
+           print subjstr
+          
+           #print 'CN={},OU={},O={},L={},S={},C={}'.format(subject.commonName,
+           #                                           subject.organizationalUnitName,
+           #                                           subject.organizationName,
+           #                                           subject.localityName,
+           #                                           subject.stateOrProvinceName,
+           #                                           subject.countryName)
+       except Exception as e:
+           print e 
+           #print subject.get_components()
