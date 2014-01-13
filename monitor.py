@@ -13,8 +13,7 @@ ofile = './ofile.out'
 
 
 s = Session()
-r = Request('GET',
-             url)
+r = Request('GET', url)
 
 prepped = r.prepare()
 
@@ -49,6 +48,9 @@ f = open(ofile,'w')
 if r.status_code == 200:
     entries = r.json()['entries']
     for i in entries:
+        f.write('Leaf:\n')
+        f.write(i['leaf_input'])
+        f.write('Extra Data:\n')
         f.write(i['extra_data'])
         f.write('\n')
 
