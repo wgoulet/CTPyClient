@@ -3,13 +3,21 @@ import base64
 import json
 import urllib
 import io
+import sys
 import struct
 from requests import Session, Request
 from OpenSSL import crypto
     
     
     
-def main():
+def main(args):
+    if len(args) != 1:
+       print "Usage monitor.py [number of entries to retrieve]"
+       sys.exit(1)
+    elif args[0].isdigit() == False:
+       print "Usage monitor.py [number of entries to retrieve]"
+       sys.exit(1)
+    offset = int(args[0])
     operation = 'ct/v1/get-sth'
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
     
@@ -30,7 +38,7 @@ def main():
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
     
     endindex = numcerts - 1
-    startindex = numcerts - 10
+    startindex = numcerts - offset
     
     params = urllib.urlencode({'start':startindex,'end':endindex})
     
@@ -121,4 +129,5 @@ def parse_leafinput(inder):
     
     print_cert(cert)
     
-main()
+if __name__ == "__main__":
+    main(sys.argv[1:])
