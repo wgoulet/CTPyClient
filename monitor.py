@@ -7,6 +7,7 @@ import sys
 import struct
 from requests import Session, Request
 from OpenSSL import crypto
+from curses.ascii import isprint
     
     
     
@@ -95,6 +96,10 @@ def parse_asn1certs(inder):
         bcount += certlen
         
 def print_cert(cert):
+    #Certain there are better toolsets for this, but parse cert
+    #subject and break it into the DN components that are important
+    #if this fails, just dump the raw subject data as returned by 
+    #openssl
     try:
         certobj = crypto.load_certificate(crypto.FILETYPE_ASN1,cert)
         subject = certobj.get_subject()
@@ -104,6 +109,23 @@ def print_cert(cert):
                                                        subject.localityName,
                                                        subject.stateOrProvinceName,
                                                        subject.countryName)
+        #Get contents of subjectAltName extension 
+        extct = certobj.get_extension_count()
+        for i in range(extct):
+            ext = certobj.get_extension(i)
+            #Lazy approach til I parse the ASN; only
+            #output printable chars
+            if ext.get_short_name() == 'subjectAltName':
+                bstr = io.BytesIO(ext.get_data())
+                blen = len(bstr.read())
+                bstr.seek(0)
+                val = ''
+                while bstr.tell() < blen:
+                    i = bstr.read(1)
+                    if len(i) > 0 and isprint(i):
+                       val += i
+                print val
+
     except:
         print subject.get_components()
     
