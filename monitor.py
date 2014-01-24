@@ -8,6 +8,10 @@ import struct
 from requests import Session, Request
 from OpenSSL import crypto
 from curses.ascii import isprint
+from pyasn1.codec.der import decoder as der_decoder
+import pyasn1
+import pyasn1_modules
+from ndg.httpsclient.subj_alt_name import SubjectAltName
     
     
     
@@ -111,21 +115,21 @@ def print_cert(cert):
                                                        subject.countryName)
         #Get contents of subjectAltName extension 
         extct = certobj.get_extension_count()
+        # Code copied blatently from https://gist.github.com/cato-/6551668/raw/9d0c4d5e1ba16b92c4f4a18e74e460c097676785/verify_cert.py
+        # and ndg.httpsclient.ssl_peer_verification.ServerSSLCertVerification
+        general_names = SubjectAltName()
         for i in range(extct):
             ext = certobj.get_extension(i)
-            #Lazy approach til I parse the ASN; only
-            #output printable chars
             if ext.get_short_name() == 'subjectAltName':
+                data = der_decoder.decode(ext.get_data(),asn1Spec=general_names)
+                for names in data:
+                    for entry in range(len(names)):
+                        component = names.getComponentByPosition(entry)
+                        print str(component.getComponent())
                 bstr = io.BytesIO(ext.get_data())
                 blen = len(bstr.read())
                 bstr.seek(0)
                 val = ''
-                while bstr.tell() < blen:
-                    i = bstr.read(1)
-                    if len(i) > 0 and isprint(i):
-                       val += i
-                print val
-
     except:
         print subject.get_components()
     
