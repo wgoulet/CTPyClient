@@ -15,7 +15,13 @@ Usage:
 monitor.py [number of log entries relative to last log entry to fetch]
 ```
 
-Install through `pip`:
+Install through `pip` using the requirements file:
+
+```
+pip install -r requirements.txt
+```
+
+or manually install the following:
 
 * pyopenssl
 * requests
