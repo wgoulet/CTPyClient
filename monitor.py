@@ -105,6 +105,7 @@ def print_cert(cert):
     #if this fails, just dump the raw subject data as returned by 
     #openssl
     try:
+        subject = None
         certobj = crypto.load_certificate(crypto.FILETYPE_ASN1,cert)
         subject = certobj.get_subject()
         print 'CN={},OU={},O={},L={},S={},C={}'.format(subject.commonName,
@@ -131,7 +132,8 @@ def print_cert(cert):
                 bstr.seek(0)
                 val = ''
     except:
-        print subject.get_components()
+        if subject is not None:
+            print subject.get_components()
     
              
 def parse_leafinput(inder):
