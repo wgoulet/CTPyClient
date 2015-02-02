@@ -24,7 +24,7 @@ def main(args):
        sys.exit(1)
     offset = int(args[0])
     operation = 'ct/v1/get-sth'
-    url = 'https://ct.api.venafi.com/{}'.format(operation)
+    url = 'http://ct.api.venafi.com/{}'.format(operation)
     
     s = Session()
     r = Request('GET', url)
@@ -96,16 +96,17 @@ def parse_asn1certs(inder):
         bcount += 3
         certlen, = struct.unpack(">I",'\x00' + inlen)
         cert = inbytes.read(certlen)
-        print_cert(cert)
+        print_cert(cert,printraw=True)
         bcount += certlen
         
-def print_cert(cert):
+def print_cert(cert,printraw=False):
     #Certain there are better toolsets for this, but parse cert
     #subject and break it into the DN components that are important
     #if this fails, just dump the raw subject data as returned by 
     #openssl
     try:
-        subject = None
+        if printraw:
+            print base64.b64encode(cert)
         certobj = crypto.load_certificate(crypto.FILETYPE_ASN1,cert)
         subject = certobj.get_subject()
         print 'CN={},OU={},O={},L={},S={},C={}'.format(subject.commonName,
@@ -132,8 +133,7 @@ def print_cert(cert):
                 bstr.seek(0)
                 val = ''
     except:
-        if subject is not None:
-            print subject.get_components()
+        print subject.get_components()
     
              
 def parse_leafinput(inder):
