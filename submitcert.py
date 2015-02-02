@@ -18,7 +18,7 @@ def main(args):
 	sys.exit(1)
     fname = args[0]
     operation = 'ct/v1/add-chain'
-    url = 'http://ct.api.venafi.com/{}'.format(operation)
+    url =  'https://ct.googleapis.com/aviator/{}'.format(operation)
     certlist = []
 
     for fname in args:
