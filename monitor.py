@@ -24,7 +24,7 @@ def main(args):
        sys.exit(1)
     offset = int(args[0])
     operation = 'ct/v1/get-sth'
-    url = 'http://ct.api.venafi.com/{}'.format(operation)
+    url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
     
     s = Session()
     r = Request('GET', url)
