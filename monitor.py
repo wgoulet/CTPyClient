@@ -105,9 +105,10 @@ def print_cert(cert,printraw=False):
     #if this fails, just dump the raw subject data as returned by 
     #openssl
     try:
-        if printraw:
-            print base64.b64encode(cert)
         certobj = crypto.load_certificate(crypto.FILETYPE_ASN1,cert)
+        if printraw:
+            print crypto.dump_certificate(crypto.FILETYPE_PEM,certobj)
+        
         subject = certobj.get_subject()
         print 'CN={},OU={},O={},L={},S={},C={}'.format(subject.commonName,
                                                        subject.organizationalUnitName,
