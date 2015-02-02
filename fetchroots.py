@@ -5,8 +5,7 @@ from OpenSSL import crypto
 
 
 
-#url = 'http://ct.googleapis.com/aviator/ct/v1/get-roots'
-url = 'https://ct.api.venafi.com/ct/v1/get-roots'
+url = 'http://ct.googleapis.com/aviator/ct/v1/get-roots'
 
 
 s = Session()
