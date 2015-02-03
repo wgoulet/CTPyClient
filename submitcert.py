@@ -5,6 +5,7 @@ import urllib
 import io
 import sys
 import requests
+import datetime
 import struct
 from OpenSSL import crypto
 from curses.ascii import isprint
@@ -65,7 +66,9 @@ def main(args):
 
     if r.status_code == 200:
 	print "sent log"
-	print r.text
+	respbody = r.json()
+	tstamp = int(respbody["timestamp"]) / 1000 # convert milliseconds to seconds
+	print "Log ID: {0}, Timestamp: {1}".format(respbody["id"],datetime.datetime.fromtimestamp(tstamp).strftime('%Y-%m-%d %H:%M:%S'))
     else:
 	print r.status_code
 	print r.text
