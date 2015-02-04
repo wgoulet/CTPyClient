@@ -7,6 +7,10 @@ import sys
 import struct
 from requests import Session, Request
 from OpenSSL import crypto
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.Hash import SHA256
+from Crypto.Hash import SHA
+from Crypto.PublicKey import RSA
 from curses.ascii import isprint
 from pyasn1.codec.der import decoder as der_decoder
 import pyasn1
@@ -14,15 +18,18 @@ import pyasn1_modules
 from ndg.httpsclient.subj_alt_name import SubjectAltName
     
     
+# Note that RFC6962 doesn't define a way to fetch public keys for logs
+# per section 5.2, so keys should be fetched from http://www.certificate-transparency.org/known-logs
     
 def main(args):
-    if len(args) != 1:
-       print "Usage monitor.py [number of entries to retrieve]"
+    if len(args) <= 1:
+       print "Usage monitor.py [number of entries to retrieve] [path to log public key]"
        sys.exit(1)
     elif args[0].isdigit() == False:
-       print "Usage monitor.py [number of entries to retrieve]"
+       print "Usage monitor.py [number of entries to retrieve] [path to log public key]"
        sys.exit(1)
     offset = int(args[0])
+    logkeypath = args[1]
     operation = 'ct/v1/get-sth'
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
     
@@ -37,7 +44,13 @@ def main(args):
     
     if r.status_code == 200:
         sth = r.json()
+	print sth
         numcerts = sth['tree_size']
+
+    logkey = open(logkeypath,'r').read()
+    if verify_sth(sth,logkey) == False:
+	print 'Invalid log; signed tree head failed validation'
+	return 1
     
     operation = 'ct/v1/get-entries'
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
@@ -96,7 +109,7 @@ def parse_asn1certs(inder):
         bcount += 3
         certlen, = struct.unpack(">I",'\x00' + inlen)
         cert = inbytes.read(certlen)
-        print_cert(cert,printraw=True)
+        print_cert(cert,printraw=False)
         bcount += certlen
         
 def print_cert(cert,printraw=False):
@@ -158,6 +171,53 @@ def parse_leafinput(inder):
     cert = leaf.read(clen[0])
     
     print_cert(cert)
+
+def verify_sth(sth_json,sigkey):
+    # No info in response to determine whether RSA or ECC signature used, so support RSA only for now
+    # Signature is calculated over this structure
+    # digitally-signed struct {
+    #       Version version;
+    #       SignatureType signature_type = tree_hash;
+    #       uint64 timestamp;
+    #       uint64 tree_size;
+    #       opaque sha256_root_hash[32];
+    #   } TreeHeadSignature;
+    # So build this struct using fixed values of version and tree_hash per RFC 6962, calculate SHA256 hash
+    # of the result and pass this to PKCS115_SigScheme.verify (from pycrypto) to verify
+    treehash = struct.pack(">B",1)
+    version = struct.pack(">B",0)
+    # put the decimal encoded values into byte buffers
+    tstampbuf = struct.pack(">Q",sth_json["timestamp"])
+    tsizebuf = struct.pack(">Q",sth_json["tree_size"])
+    # convert base64 root hash to binary
+    srhbuf = base64.b64decode(sth_json["sha256_root_hash"])
+    #buf = version + treehash + tstampbuf + tsizebuf + srhbuf
+    buf = tsizebuf + tstampbuf + srhbuf
+    print ''.join( [ "%02X " % ord( x ) for x in buf ] ).strip()
+    print base64.b64encode(buf)
+    # Get SHA256 digest of buffer
+    m = SHA256.new(buf)
+    # convert base64 signature in message to binary
+    sigbuf = base64.b64decode(sth_json["tree_head_signature"])
+    # TESTING ONLY; skip the first 2 bytes of the TLS serialized signature
+    b = io.BytesIO(sigbuf)
+    b.seek(2)
+    print ''.join( [ "%02X " % ord( x ) for x in sigbuf ] ).strip()
+    buf2 = b.read()
+    print ''.join( [ "%02X " % ord( x ) for x in buf2 ] ).strip()
+
+
+    # Verify the signature
+    key = RSA.importKey(sigkey)
+    verifier = PKCS1_v1_5.new(key)
+    if verifier.verify(m, buf2):
+    #if verifier.verify(m, sth_json["tree_head_signature"]):
+	print "The signature is authentic."
+    else:
+	print "The signature is not authentic."
+
+
+    return True
     
 if __name__ == "__main__":
     main(sys.argv[1:])
