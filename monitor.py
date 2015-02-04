@@ -134,7 +134,8 @@ def print_cert(cert,printraw=False):
                 bstr.seek(0)
                 val = ''
     except:
-        print subject.get_components()
+	if subject is not None:
+	    print subject.get_components()
     
              
 def parse_leafinput(inder):
