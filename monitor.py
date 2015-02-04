@@ -5,6 +5,7 @@ import urllib
 import io
 import sys
 import struct
+import hashlib
 from requests import Session, Request
 from OpenSSL import crypto
 from Crypto.Signature import PKCS1_v1_5
@@ -15,11 +16,14 @@ from curses.ascii import isprint
 from pyasn1.codec.der import decoder as der_decoder
 import pyasn1
 import pyasn1_modules
+import ecdsa
+from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 from ndg.httpsclient.subj_alt_name import SubjectAltName
     
     
 # Note that RFC6962 doesn't define a way to fetch public keys for logs
 # per section 5.2, so keys should be fetched from http://www.certificate-transparency.org/known-logs
+# Note that keys are stored in the log json file and that they should be decoded as PEM 
     
 def main(args):
     if len(args) <= 1:
@@ -37,8 +41,13 @@ def main(args):
     r = Request('GET', url)
     
     prepped = r.prepare()
+
+    proxies = {
+	    "http": "http://127.0.0.1:8080",
+    }
     
-    r = s.send(prepped)
+    
+    r = s.send(prepped,proxies=proxies)
     
     numcerts = 0
     
@@ -54,6 +63,7 @@ def main(args):
     
     operation = 'ct/v1/get-entries'
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
+    
     
     endindex = numcerts - 1
     startindex = numcerts - offset
@@ -173,7 +183,6 @@ def parse_leafinput(inder):
     print_cert(cert)
 
 def verify_sth(sth_json,sigkey):
-    # No info in response to determine whether RSA or ECC signature used, so support RSA only for now
     # Signature is calculated over this structure
     # digitally-signed struct {
     #       Version version;
@@ -182,8 +191,6 @@ def verify_sth(sth_json,sigkey):
     #       uint64 tree_size;
     #       opaque sha256_root_hash[32];
     #   } TreeHeadSignature;
-    # So build this struct using fixed values of version and tree_hash per RFC 6962, calculate SHA256 hash
-    # of the result and pass this to PKCS115_SigScheme.verify (from pycrypto) to verify
     treehash = struct.pack(">B",1)
     version = struct.pack(">B",0)
     # put the decimal encoded values into byte buffers
@@ -191,29 +198,43 @@ def verify_sth(sth_json,sigkey):
     tsizebuf = struct.pack(">Q",sth_json["tree_size"])
     # convert base64 root hash to binary
     srhbuf = base64.b64decode(sth_json["sha256_root_hash"])
-    #buf = version + treehash + tstampbuf + tsizebuf + srhbuf
-    buf = tsizebuf + tstampbuf + srhbuf
+    buf = version + treehash + tstampbuf + tsizebuf + srhbuf
     print ''.join( [ "%02X " % ord( x ) for x in buf ] ).strip()
+
+    # Per RFC 6962, either support RSA or ECDSA with NIST256p curves
+    # determine this by deserializing TLS signature structure
+
     print base64.b64encode(buf)
     # Get SHA256 digest of buffer
     m = SHA256.new(buf)
     # convert base64 signature in message to binary
     sigbuf = base64.b64decode(sth_json["tree_head_signature"])
-    # TESTING ONLY; skip the first 2 bytes of the TLS serialized signature
     b = io.BytesIO(sigbuf)
-    b.seek(2)
+    hashalgo ,= struct.unpack(">b",b.read(1))
+    sigalgo ,= struct.unpack(">b",b.read(1))
+    print hashalgo
+    print sigalgo
+    if hashalgo == 4:
+	print 'using sha256'
+    if sigalgo == 3:
+	print 'using ecdsa'
     print ''.join( [ "%02X " % ord( x ) for x in sigbuf ] ).strip()
+    # TODO : I don't know where it is specified that you need to read 2 more bytes to get the sig length
+    b.read(2)
     buf2 = b.read()
     print ''.join( [ "%02X " % ord( x ) for x in buf2 ] ).strip()
 
 
     # Verify the signature
-    key = RSA.importKey(sigkey)
-    verifier = PKCS1_v1_5.new(key)
-    if verifier.verify(m, buf2):
-    #if verifier.verify(m, sth_json["tree_head_signature"]):
+    print sigkey
+
+    vk = VerifyingKey.from_pem(sigkey)
+
+    try:
+        vk.verify(buf2,buf,hashfunc=hashlib.sha256,
+	    sigdecode=ecdsa.util.sigdecode_der)
 	print "The signature is authentic."
-    else:
+    except BadSignatureError:
 	print "The signature is not authentic."
 
 
