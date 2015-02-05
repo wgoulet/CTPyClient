@@ -82,7 +82,7 @@ def main(args):
     fhandle = open("c:\\leavesdat.pem",'w')
     fhandle.writelines("{0} & {1}\n".format(sth1,sth2))
 
-    params = urllib.urlencode({'start':fetchct,'end':endindex})
+    params = urllib.urlencode({'start':startindex,'end':endindex})
     
     s = Session()
     r = Request('GET',
