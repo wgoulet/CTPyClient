@@ -39,58 +39,74 @@ def main(args):
     
     s = Session()
     r = Request('GET', url)
-    
     prepped = r.prepare()
-
     proxies = {
 	    "http": "http://127.0.0.1:8080",
     }
-    
-    
     r = s.send(prepped,proxies=proxies)
     
     numcerts = 0
     
     if r.status_code == 200:
         sth = r.json()
-	print sth
         numcerts = sth['tree_size']
 
     logkey = open(logkeypath,'r').read()
     if verify_sth(sth,logkey) == False:
 	print 'Invalid log; signed tree head failed validation'
 	return 1
+    else:
+	sth1 = sth
+
+    # Get another STH, keep asking until we get another one different
+
+    while True:
+	r = s.send(prepped,proxies=proxies)
+        if r.status_code == 200:
+	    sth = r.json()
+	    if verify_sth(sth,logkey) == False:
+		print 'Invalid log; signed tree head failed validation'
+		return 1
+	    else:
+		sth2 = sth
+	    if sth1['timestamp'] != sth2['timestamp']:
+		break
+    print sth1
+    print sth2
     
     operation = 'ct/v1/get-entries'
     url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
     
-    
-    endindex = numcerts - 1
-    startindex = numcerts - offset
-    
-    params = urllib.urlencode({'start':startindex,'end':endindex})
-    
+    startindex = sth1['tree_size']
+    endindex = sth2['tree_size'] - 1
+    fhandle = open("c:\\leavesdat.pem",'w')
+    fhandle.writelines("{0} & {1}\n".format(sth1,sth2))
+
+    params = urllib.urlencode({'start':fetchct,'end':endindex})
     
     s = Session()
-    
     r = Request('GET',
-                 '{}?{}'.format(url,params),
-                 )
+	'{}?{}'.format(url,params),
+	)
     
     prepped = r.prepare()
-    
     r = s.send(prepped)
-    
+    leaves = []
+
     if r.status_code == 200:
-        entries = r.json()['entries']
-        for i in entries:
-            print "End entity cert"
-            parse_leafinput(base64.b64decode(i['leaf_input']))
-            print "Signing cert chain"
-            parse_asn1certs(base64.b64decode(i['extra_data']))
-    else:
-        print r.status_code
-        print r.text
+	entries = r.json()['entries']
+	fetchct += len(entries)
+	print "{0} leaf entries so far".format(fetchct)
+	# Construct a MTH for all leaf_inputs received
+	for i in entries:
+	    fhandle.writelines(i['leaf_input'] + '\n')
+	    leaves.append(base64.b64decode(i['leaf_input']))
+	else:
+	    print r.status_code
+	    print r.text
+    fhandle.close()
+
+#    verify_entries(sth,leaves)
     
 def parse_asn1certs(inder):
     #Certlist is variable size list of ASN.1Cert objects
@@ -242,19 +258,50 @@ def verify_sth(sth_json,sigkey):
 
     # Verify the signature
     print sigkey
-
-    vk = VerifyingKey.from_pem(sigkey)
-
-    try:
-        vk.verify(buf2,buf,hashfunc=hashlib.sha256,
+    if hashalgo == 4 and sigalgo == 3:
+	vk = VerifyingKey.from_pem(sigkey)
+	try:
+	    vk.verify(buf2,buf,hashfunc=hashlib.sha256,
 	    sigdecode=ecdsa.util.sigdecode_der)
-	print "The signature is authentic."
-    except BadSignatureError:
-	print "The signature is not authentic."
+	    print "The signature is authentic."
+	except BadSignatureError:
+		print "The signature is not authentic."
+		return False
+    else:
+	print "Unsupported signature/hash algorithm"
 	return False
 
-
     return True
+
+def verify_entries(sth,entries):
+    # Calculate hash of passed in entries
+    print len(entries)
+    calchash = get_hash(entries,algo='SHA256')
+    print base64.b64encode(calchash)
+
+def get_hash(entries,algo):
+    n = len(entries)
+    if n == 0:
+	return 0
+    if algo != 'SHA256':
+	return 0
+    if n == 1:
+	buf = '0x00' + entries[0]
+	return SHA256.new(buf).digest()
+    else:
+	k = n
+	while True:
+	    k -= 1
+	    if is_power2(k):
+		break
+	return SHA256.new('0x01' + get_hash(entries[0:k],'SHA256') + get_hash(entries[k:n],'SHA256')).digest()
+
+# From activestate recipies
+# Author: A.Polino
+
+def is_power2(num):
+    'states if a number is a power of two'
+    return num != 0 and ((num & (num - 1)) == 0)
     
 if __name__ == "__main__":
     main(sys.argv[1:])
