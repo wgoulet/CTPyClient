@@ -156,9 +156,9 @@ def print_cert(cert,printraw=False):
                 blen = len(bstr.read())
                 bstr.seek(0)
                 val = ''
+	print subject.get_components()
     except:
-	if subject is not None:
-	    print subject.get_components()
+	print "Unable to parse certificate subject"
     
              
 def parse_leafinput(inder):
@@ -179,8 +179,10 @@ def parse_leafinput(inder):
     certlength = leaf.read(3)
     clen = struct.unpack(">I",'\x00' + certlength)
     cert = leaf.read(clen[0])
-    
-    print_cert(cert)
+    if entrytype != 1:
+	print_cert(cert)
+    else:
+	print "Pre-cert entry"
 
 def verify_sth(sth_json,sigkey):
     # Signature is calculated over this structure
@@ -219,9 +221,22 @@ def verify_sth(sth_json,sigkey):
     if sigalgo == 3:
 	print 'using ecdsa'
     print ''.join( [ "%02X " % ord( x ) for x in sigbuf ] ).strip()
-    # TODO : I don't know where it is specified that you need to read 2 more bytes to get the sig length
-    b.read(2)
+    # Signature is opaque data structure per RFC 5246. Length of the signature
+    # is stored in first n bytes where n is number of bytes sufficient to hold max size
+    # of signature
+    # Defined as 
+    # struct {
+    #     SignatureAndHashAlgorithm algorithm;
+    #     opaque signature<0..2^16-1>;
+    #  } DigitallySigned;
+    # 2 bytes needed to specify 2^16 - 1
+
+    siglen ,= struct.unpack(">h",b.read(2))
+    print siglen
     buf2 = b.read()
+    if siglen != len(buf2):
+	print 'Signature invalid; signature wrong length'
+	return False
     print ''.join( [ "%02X " % ord( x ) for x in buf2 ] ).strip()
 
 
@@ -236,6 +251,7 @@ def verify_sth(sth_json,sigkey):
 	print "The signature is authentic."
     except BadSignatureError:
 	print "The signature is not authentic."
+	return False
 
 
     return True
