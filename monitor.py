@@ -8,6 +8,7 @@ import struct
 import hashlib
 import re
 import time
+import math
 from requests import Session, Request
 from OpenSSL import crypto
 from Crypto.Signature import PKCS1_v1_5
@@ -28,91 +29,81 @@ from ndg.httpsclient.subj_alt_name import SubjectAltName
 # Note that keys are stored in the log json file and that they should be decoded as PEM 
     
 def main(args):
-    if len(args) <= 1:
-       print "Usage monitor.py [number of entries to retrieve] [path to log public key]"
+    autofetch = True
+    first = 0
+    second = 0
+
+    if len(args) < 1:
+       print "Usage monitor.py \"path to log public key\" [sth treesize 1] [sth treesize 2]"
        sys.exit(1)
-    elif args[0].isdigit() == False:
-       print "Usage monitor.py [number of entries to retrieve] [path to log public key]"
-       sys.exit(1)
-    offset = int(args[0])
-    logkeypath = args[1]
-    operation = 'ct/v1/get-sth'
-    url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
-    
-    s = Session()
-    r = Request('GET', url)
-    prepped = r.prepare()
-    proxies = {
-	    #"http": "http://127.0.0.1:8080",
-    }
-    r = s.send(prepped,proxies=proxies)
-    
-    numcerts = 0
-    
-    if r.status_code == 200:
-        sth = r.json()
-        numcerts = sth['tree_size']
+    elif len(args) > 1:
+	autofetch = False
+	first = args[1]
+	second = args[2]
 
-    logkey = open(logkeypath,'r').read()
-    if verify_sth(sth,logkey) == False:
-	print 'Invalid log; signed tree head failed validation'
-	return 1
-    else:
-	sth1 = sth
+    logkeypath = args[0]
 
-    # Get another STH, keep asking until we get another one different
-    cacheval = re.search('\d+',r.headers['cache-control']).group(0)
-    fetchct = 1
-
-    while True:
-	time.sleep(int(cacheval))
-	print "STH fetch # {0}".format(fetchct)
-	fetchct += 1
+    if autofetch == True:
+        operation = 'ct/v1/get-sth'
+	url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
+    
+	s = Session()
+	r = Request('GET', url)
+	prepped = r.prepare()
+	proxies = {
+		#"http": "http://127.0.0.1:8080",
+	}
 	r = s.send(prepped,proxies=proxies)
-        if r.status_code == 200:
+    
+	numcerts = 0
+    
+	if r.status_code == 200:
 	    sth = r.json()
-	    if verify_sth(sth,logkey) == False:
-		print 'Invalid log; signed tree head failed validation'
-		return 1
-	    else:
-		sth2 = sth
-	    if sth1['timestamp'] != sth2['timestamp']:
-		break
-    print sth1
-    print sth2
-    
-    operation = 'ct/v1/get-entries'
-    url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
-    
-    startindex = sth1['tree_size']
-    endindex = sth2['tree_size'] - 1
-    fhandle = open("c:\\leavesdat.pem",'w')
-    fhandle.writelines("{0} & {1}\n".format(sth1,sth2))
+	    numcerts = sth['tree_size']
 
-    params = urllib.urlencode({'start':startindex,'end':endindex})
-    
-    s = Session()
-    r = Request('GET',
-	'{}?{}'.format(url,params),
-	)
-    
-    prepped = r.prepare()
-    r = s.send(prepped)
-    leaves = []
-    fetchct = 0
-
-    if r.status_code == 200:
-	entries = r.json()['entries']
-	fetchct += len(entries)
-	print "{0} leaf entries so far".format(fetchct)
-	# Construct a MTH for all leaf_inputs received
-	for i in entries:
-	    fhandle.writelines(i['leaf_input'] + '\n')
-	    leaves.append(base64.b64decode(i['leaf_input']))
+	logkey = open(logkeypath,'r').read()
+	if verify_sth(sth,logkey) == False:
+	    print 'Invalid log; signed tree head failed validation'
+	    return 1
 	else:
-	    print r.status_code
-	    print r.text
-    fhandle.close()
+	    sth1 = sth
+
+	# Get another STH, keep asking until we get another one different
+	cacheval = re.search('\d+',r.headers['cache-control']).group(0)
+	fetchct = 1
+	delayval = 1
+
+	while True:
+	    time.sleep(int(cacheval))
+	    print "STH fetch # {0}".format(fetchct)
+	    fetchct += 1
+	    r = s.send(prepped,proxies=proxies)
+	    if r.status_code == 200:
+		sth = r.json()
+		if verify_sth(sth,logkey) == False:
+		    print 'Invalid log; signed tree head failed validation'
+		    return 1
+		else:
+		    sth2 = sth
+		    delayval = int(math.log(fetchct))
+		if sth1['timestamp'] != sth2['timestamp']:
+		    break
+	first = sth1['treesize']
+	second = sth1['treesize']
+
+    # Verify STHs by fetching consistency proof
+
+    operation = 'ct/v1/get-sth-consistency'
+    url = 'http://ct.googleapis.com/aviator/{}'.format(operation)
+    s = Session()
+    params = urllib.urlencode({'first':first,'second':second})
+    r = Request('GET', '{}?{}'.format(url,params))
+    prepped = r.prepare()
+   
+    r = s.send(prepped)
+    if r.status_code == 200:
+	print r.text
+
 
 #    verify_entries(sth,leaves)
     
@@ -256,6 +247,15 @@ def verify_sth(sth_json,sigkey):
 
     # Verify the signature
     print sigkey
+    # From RFC 5246 section 7.4.1.4.1 
+    # enum {
+    #      none(0), md5(1), sha1(2), sha224(3), sha256(4), sha384(5),
+    #      sha512(6), (255)
+    #  } HashAlgorithm;
+
+    #  enum { anonymous(0), rsa(1), dsa(2), ecdsa(3), (255) }
+    #    SignatureAlgorithm;
+
     if hashalgo == 4 and sigalgo == 3:
 	vk = VerifyingKey.from_pem(sigkey)
 	try:
