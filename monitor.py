@@ -6,6 +6,8 @@ import io
 import sys
 import struct
 import hashlib
+import re
+import time
 from requests import Session, Request
 from OpenSSL import crypto
 from Crypto.Signature import PKCS1_v1_5
@@ -41,7 +43,7 @@ def main(args):
     r = Request('GET', url)
     prepped = r.prepare()
     proxies = {
-	    "http": "http://127.0.0.1:8080",
+	    #"http": "http://127.0.0.1:8080",
     }
     r = s.send(prepped,proxies=proxies)
     
@@ -59,8 +61,13 @@ def main(args):
 	sth1 = sth
 
     # Get another STH, keep asking until we get another one different
+    cacheval = re.search('\d+',r.headers['cache-control']).group(0)
+    fetchct = 1
 
     while True:
+	time.sleep(int(cacheval))
+	print "STH fetch # {0}".format(fetchct)
+	fetchct += 1
 	r = s.send(prepped,proxies=proxies)
         if r.status_code == 200:
 	    sth = r.json()
@@ -92,6 +99,7 @@ def main(args):
     prepped = r.prepare()
     r = s.send(prepped)
     leaves = []
+    fetchct = 0
 
     if r.status_code == 200:
 	entries = r.json()['entries']
@@ -217,7 +225,6 @@ def verify_sth(sth_json,sigkey):
     # convert base64 root hash to binary
     srhbuf = base64.b64decode(sth_json["sha256_root_hash"])
     buf = version + treehash + tstampbuf + tsizebuf + srhbuf
-    print ''.join( [ "%02X " % ord( x ) for x in buf ] ).strip()
 
     # Per RFC 6962, either support RSA or ECDSA with NIST256p curves
     # determine this by deserializing TLS signature structure
@@ -230,13 +237,6 @@ def verify_sth(sth_json,sigkey):
     b = io.BytesIO(sigbuf)
     hashalgo ,= struct.unpack(">b",b.read(1))
     sigalgo ,= struct.unpack(">b",b.read(1))
-    print hashalgo
-    print sigalgo
-    if hashalgo == 4:
-	print 'using sha256'
-    if sigalgo == 3:
-	print 'using ecdsa'
-    print ''.join( [ "%02X " % ord( x ) for x in sigbuf ] ).strip()
     # Signature is opaque data structure per RFC 5246. Length of the signature
     # is stored in first n bytes where n is number of bytes sufficient to hold max size
     # of signature
@@ -248,12 +248,10 @@ def verify_sth(sth_json,sigkey):
     # 2 bytes needed to specify 2^16 - 1
 
     siglen ,= struct.unpack(">h",b.read(2))
-    print siglen
     buf2 = b.read()
     if siglen != len(buf2):
 	print 'Signature invalid; signature wrong length'
 	return False
-    print ''.join( [ "%02X " % ord( x ) for x in buf2 ] ).strip()
 
 
     # Verify the signature
